@@ -19,7 +19,7 @@ const transactionSchema = new mongoose.Schema({
   tanggal: { type: String, required: true },
   cash: { type: Number, default: 0 },
   bca: { type: Number, default: 0 },
-  qris: { type: Number, default: 0 },
+  gofood: { type: Number, default: 0 },
   jenisPengeluaran: { type: String, default: "" },
   totalPengeluaran: { type: Number, default: 0 }
 }, { timestamps: true });
@@ -49,14 +49,22 @@ app.post('/api/transactions', async (req, res) => {
   }
 });
 
-// 5. Konfigurasi Port & Export untuk Vercel
+// 5. API Hapus Data (BARU)
+app.delete('/api/transactions/:id', async (req, res) => {
+  try {
+    await Transaction.findByIdAndDelete(req.params.id);
+    res.status(200).json({ status: 'success', message: 'Data dihapus' });
+  } catch (error) {
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+});
+
+// 6. Konfigurasi Port & Export untuk Vercel
 const PORT = process.env.PORT || 5000;
 if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
     console.log(`🚀 Mesin Backend menyala di http://localhost:${PORT}`);
   });
 }
-
-// INI BAGIAN PALING PENTING UNTUK VERCEL
 
 module.exports = app;
