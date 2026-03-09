@@ -19,7 +19,7 @@ const transactionSchema = new mongoose.Schema({
   tanggal: { type: String, required: true },
   cash: { type: Number, default: 0 },
   bca: { type: Number, default: 0 },
-  gofood: { type: Number, default: 0 },
+  qris: { type: Number, default: 0 },
   jenisPengeluaran: { type: String, default: "" },
   totalPengeluaran: { type: Number, default: 0 }
 }, { timestamps: true });
@@ -58,4 +58,5 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 // INI BAGIAN PALING PENTING UNTUK VERCEL
+
 module.exports = app;
