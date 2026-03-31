@@ -13,10 +13,10 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('✅ BOOM! Berhasil terhubung ke MongoDB!'))
   .catch((err) => console.error('❌ Gagal connect ke MongoDB:', err));
 
-// 2. Schema dan Model (DITAMBAH isDeleted, deletedAt, printCount)
+// 2. Schema dan Model
 const transactionSchema = new mongoose.Schema({
-  sheet: { type: String, required: true },
-  tanggal: { type: String, required: true },
+  sheet: { type: String, required: true, index: true }, // DITAMBAH INDEX BIAR NGEBUT
+  tanggal: { type: String, required: true, index: true }, // DITAMBAH INDEX BIAR NGEBUT
   cash: { type: Number, default: 0 },
   bca: { type: Number, default: 0 },
   gofood: { type: Number, default: 0 },
@@ -29,10 +29,11 @@ const transactionSchema = new mongoose.Schema({
 
 const Transaction = mongoose.model('Transaction', transactionSchema);
 
-// 3. API Tarik Data
+// 3. API Tarik Data (Bisa ambil semua, atau filter per cabang)
 app.get('/api/transactions', async (req, res) => {
   try {
     const { sheet } = req.query;
+    // Kalau query sheet dikosongin, dia ambil SEMUA cabang (buat admin)
     const filter = sheet ? { sheet: sheet } : {};
     const data = await Transaction.find(filter).sort({ createdAt: 1 });
     res.status(200).json(data);
@@ -52,7 +53,7 @@ app.post('/api/transactions', async (req, res) => {
   }
 });
 
-// 5. API Hapus Data (SOFT DELETE BARU)
+// 5. API Hapus Data (SOFT DELETE)
 app.delete('/api/transactions/:id', async (req, res) => {
   try {
     const updatedTx = await Transaction.findByIdAndUpdate(
@@ -66,7 +67,7 @@ app.delete('/api/transactions/:id', async (req, res) => {
   }
 });
 
-// 6. API Tambah Print Counter (BARU)
+// 6. API Tambah Print Counter
 app.patch('/api/transactions/:id/print', async (req, res) => {
   try {
     const tx = await Transaction.findById(req.params.id);
@@ -80,7 +81,7 @@ app.patch('/api/transactions/:id/print', async (req, res) => {
   }
 });
 
-// 7. Konfigurasi Port & Export untuk Vercel
+// 7. Konfigurasi Port
 const PORT = process.env.PORT || 5000;
 if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
