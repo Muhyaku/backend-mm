@@ -7,11 +7,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// 1. KONEKSI MONGODB
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('✅ BOOM! Berhasil terhubung ke MongoDB!'))
   .catch((err) => console.error('❌ Gagal connect ke MongoDB:', err));
 
-// 1. SCHEMA TRANSAKSI (Sama seperti sebelumnya)
+// 2. SCHEMA TRANSAKSI
 const transactionSchema = new mongoose.Schema({
   sheet: { type: String, required: true, index: true },
   tanggal: { type: String, required: true, index: true },
@@ -27,12 +28,13 @@ const transactionSchema = new mongoose.Schema({
 
 const Transaction = mongoose.model('Transaction', transactionSchema);
 
-// 2. SCHEMA BIAYA TETAP ROUTINE (BARU)
+// 3. SCHEMA BIAYA TETAP ROUTINE
 const recurringSchema = new mongoose.Schema({
   sheet: { type: String, required: true },
   nama: { type: String, required: true },
   nominal: { type: Number, required: true },
   startDate: { type: Date, required: true },
+  endDate: { type: Date, default: null }, // BARU: Batas akhir pengeluaran rutin
   frekuensi: { type: String, enum: ['bulanan', 'tahunan', 'harian'], required: true },
   intervalHari: { type: Number, default: 0 },
   lastApplied: { type: Date, default: null },
@@ -41,7 +43,9 @@ const recurringSchema = new mongoose.Schema({
 
 const Recurring = mongoose.model('Recurring', recurringSchema);
 
-// --- API TRANSAKSI ---
+// ==========================================
+// API TRANSAKSI
+// ==========================================
 app.get('/api/transactions', async (req, res) => {
   try {
     const { sheet } = req.query;
@@ -53,7 +57,6 @@ app.get('/api/transactions', async (req, res) => {
 
 app.post('/api/transactions', async (req, res) => {
   try {
-    // Support array data (Untuk Belanja Gabungan 3 Cabang sekaligus)
     if (Array.isArray(req.body)) {
       const inserted = await Transaction.insertMany(req.body);
       return res.status(201).json({ status: 'success', data: inserted });
@@ -83,7 +86,9 @@ app.patch('/api/transactions/:id/print', async (req, res) => {
   } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
 
-// --- API BIAYA ROUTINE (BARU) ---
+// ==========================================
+// API BIAYA ROUTINE
+// ==========================================
 app.get('/api/recurring', async (req, res) => {
   try {
     const data = await Recurring.find().sort({ createdAt: -1 });
@@ -99,10 +104,10 @@ app.post('/api/recurring', async (req, res) => {
   } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
 
-app.put('/api/recurring/:id', async (req, res) => {
+app.delete('/api/recurring/:id', async (req, res) => {
   try {
-    const updated = await Recurring.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    res.status(200).json({ status: 'success', data: updated });
+    await Recurring.findByIdAndDelete(req.params.id);
+    res.status(200).json({ status: 'success', message: 'Routine deleted' });
   } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
 
@@ -119,15 +124,20 @@ app.post('/api/recurring/trigger', async (req, res) => {
     for (const rule of rules) {
       let currentDate = rule.lastApplied ? new Date(rule.lastApplied) : new Date(rule.startDate);
       
-      // Lompat ke periode berikutnya jika sudah pernah diapply
       if (rule.lastApplied) {
         if (rule.frekuensi === 'bulanan') currentDate.setMonth(currentDate.getMonth() + 1);
         else if (rule.frekuensi === 'tahunan') currentDate.setFullYear(currentDate.getFullYear() + 1);
         else if (rule.frekuensi === 'harian') currentDate.setDate(currentDate.getDate() + rule.intervalHari);
       }
 
-      // Loop selama tanggal jatuh tempo masih di bawah atau sama dengan hari ini
       while (currentDate <= today) {
+        // Cek jika sudah lewat End Date
+        if (rule.endDate && currentDate > new Date(rule.endDate)) {
+           rule.isActive = false;
+           await rule.save();
+           break;
+        }
+
         const tglFormat = `${daysMap[currentDate.getDay()]}, ${String(currentDate.getDate()).padStart(2, '0')} ${monthsMap[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
         
         await Transaction.create({
@@ -138,11 +148,10 @@ app.post('/api/recurring/trigger', async (req, res) => {
           totalPengeluaran: rule.nominal
         });
 
-        rule.lastApplied = new Date(currentDate); // Simpan tanggal terakhir kali kena tagihan
+        rule.lastApplied = new Date(currentDate); 
         await rule.save();
         generatedCount++;
 
-        // Increment untuk cek cycle berikutnya
         if (rule.frekuensi === 'bulanan') currentDate.setMonth(currentDate.getMonth() + 1);
         else if (rule.frekuensi === 'tahunan') currentDate.setFullYear(currentDate.getFullYear() + 1);
         else if (rule.frekuensi === 'harian') currentDate.setDate(currentDate.getDate() + rule.intervalHari);
