@@ -63,6 +63,50 @@ const initSettings = async () => {
 };
 initSettings();
 
+// 5. SCHEMA ACTIVITY LOG (LAPORAN LAINNYA)
+const activityLogSchema = new mongoose.Schema({
+  sheet: { type: String, required: true, index: true },
+  actionType: { type: String, required: true }, // Contoh: 'UBAH_HARGA'
+  menuName: { type: String, required: true },
+  oldPrice: { type: Number, required: true },
+  newPrice: { type: Number, required: true },
+  isDeleted: { type: Boolean, default: false },
+  deletedAt: { type: Date, default: null }
+}, { timestamps: true });
+const ActivityLog = mongoose.model('ActivityLog', activityLogSchema);
+
+// ==========================================
+// API ACTIVITY LOG (LAPORAN LAINNYA)
+// ==========================================
+app.get('/api/activities', async (req, res) => {
+  try {
+    const data = await ActivityLog.find().sort({ createdAt: -1 });
+    res.status(200).json(data);
+  } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
+});
+
+app.post('/api/activities', async (req, res) => {
+  try {
+    const newLog = new ActivityLog(req.body);
+    await newLog.save();
+    res.status(201).json({ status: 'success', data: newLog });
+  } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
+});
+
+app.delete('/api/activities/:id', async (req, res) => {
+  try {
+    const updated = await ActivityLog.findByIdAndUpdate(req.params.id, { isDeleted: true, deletedAt: new Date() }, { new: true });
+    res.status(200).json({ status: 'success', data: updated });
+  } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
+});
+
+app.delete('/api/activities/hard/:id', async (req, res) => {
+  try {
+    await ActivityLog.findByIdAndDelete(req.params.id);
+    res.status(200).json({ status: 'success', message: 'Log dihapus permanen' });
+  } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
+});
+
 // ==========================================
 // API TRANSAKSI
 // ==========================================
