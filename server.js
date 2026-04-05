@@ -63,13 +63,13 @@ const initSettings = async () => {
 };
 initSettings();
 
-// 5. SCHEMA ACTIVITY LOG (LAPORAN LAINNYA)
+// 5. SCHEMA ACTIVITY LOG (LAPORAN LAINNYA) - UPDATED FOR STOK & NAMA
 const activityLogSchema = new mongoose.Schema({
   sheet: { type: String, required: true, index: true },
-  actionType: { type: String, required: true }, // Contoh: 'UBAH_HARGA'
+  actionType: { type: String, required: true }, // 'UBAH_HARGA', 'UBAH_NAMA', 'UBAH_STOK', 'GABUNGAN'
+  menuId: { type: String, required: true },
   menuName: { type: String, required: true },
-  oldPrice: { type: Number, required: true },
-  newPrice: { type: Number, required: true },
+  details: { type: String, required: true }, // Catatan detail: "Dari X menjadi Y"
   isDeleted: { type: Boolean, default: false },
   deletedAt: { type: Date, default: null }
 }, { timestamps: true });
@@ -106,7 +106,6 @@ app.delete('/api/activities/hard/:id', async (req, res) => {
     res.status(200).json({ status: 'success', message: 'Log dihapus permanen' });
   } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
-
 // ==========================================
 // API TRANSAKSI
 // ==========================================
