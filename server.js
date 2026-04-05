@@ -63,15 +63,30 @@ const initSettings = async () => {
 };
 initSettings();
 
-// 5. SCHEMA ACTIVITY LOG (LAPORAN LAINNYA) - UPDATED FOR STOK & NAMA
+// ... (Di bawah schema Transaction & Recurring)
+
+// 4. SCHEMA MENU MASTER (UNTUK NAMA, HARGA, STOK)
+const menuMasterSchema = new mongoose.Schema({
+  sheet: { type: String, required: true, index: true },
+  menuId: { type: String, required: true },
+  name: { type: String, required: true },
+  price: { type: Number, required: true },
+  stock: { type: Number, default: 0 },
+  stockPaha: { type: Number, default: 0 }, // Khusus ayam
+  stockDada: { type: Number, default: 0 }, // Khusus ayam
+  lastUpdatedDate: { type: String, required: true } // Format: YYYY-MM-DD
+}, { timestamps: true });
+const MenuMaster = mongoose.model('MenuMaster', menuMasterSchema);
+
+// 5. SCHEMA ACTIVITY LOG (SUPER DETAIL)
 const activityLogSchema = new mongoose.Schema({
   sheet: { type: String, required: true, index: true },
-  actionType: { type: String, required: true }, // 'UBAH_HARGA', 'UBAH_NAMA', 'UBAH_STOK', 'GABUNGAN'
-  menuId: { type: String, required: true },
+  actionCategory: { type: String, required: true }, // 'UBAH_NAMA', 'UBAH_HARGA', 'UBAH_STOK', 'INFO_STOK'
   menuName: { type: String, required: true },
-  details: { type: String, required: true }, // Catatan detail: "Dari X menjadi Y"
-  isDeleted: { type: Boolean, default: false },
-  deletedAt: { type: Date, default: null }
+  detailAction: { type: String, required: true }, // Cth: "Mengubah harga dari Rp 10.000 menjadi Rp 15.000"
+  timestamp: { type: String, required: true }, // Jam realtime "15:00:01"
+  dateString: { type: String, required: true }, // "Selasa, 01 Januari 2026"
+  isDeleted: { type: Boolean, default: false }
 }, { timestamps: true });
 const ActivityLog = mongoose.model('ActivityLog', activityLogSchema);
 
@@ -106,6 +121,7 @@ app.delete('/api/activities/hard/:id', async (req, res) => {
     res.status(200).json({ status: 'success', message: 'Log dihapus permanen' });
   } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
+
 // ==========================================
 // API TRANSAKSI
 // ==========================================
@@ -233,6 +249,158 @@ app.put('/api/settings/:id', async (req, res) => {
     const updated = await Setting.findByIdAndUpdate(req.params.id, req.body, { new: true });
     res.status(200).json({ status: 'success', data: updated });
   } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
+});
+
+// ==========================================
+// API MENU MASTER & STOCK MANAGEMENT
+// ==========================================
+
+// Helper untuk format tanggal Indo
+const getIndoDateString = (dateObj) => {
+  const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+  const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
+  return `${days[dateObj.getDay()]}, ${String(dateObj.getDate()).padStart(2, '0')} ${months[dateObj.getMonth()]} ${dateObj.getFullYear()}`;
+};
+
+app.get('/api/menu', async (req, res) => {
+  try {
+    const { sheet } = req.query;
+    if (!sheet) return res.status(400).json({ error: 'Sheet diperlukan' });
+
+    const todayDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const menus = await MenuMaster.find({ sheet });
+
+    let updatedMenus = [];
+
+    // LOGIKA AUTO-RESET (Lazy Evaluation)
+    for (let menu of menus) {
+      if (menu.lastUpdatedDate !== todayDate) {
+        // TANGGAL BERBEDA! Berarti ganti hari. Catat sisa stok kemarin ke laporan!
+        const tglKemarin = new Date(menu.lastUpdatedDate);
+        
+        let detailSisa = "";
+        if (menu.menuId.includes('ayam') && menu.stockPaha !== undefined) {
+             detailSisa = `SISA STOK KEMARIN: Paha (${menu.stockPaha}), Dada (${menu.stockDada})`;
+        } else {
+             detailSisa = `SISA STOK KEMARIN: Tersisa ${menu.stock} porsi`;
+        }
+
+        // Bikin Laporan Sisa Stok
+        await ActivityLog.create({
+          sheet: menu.sheet,
+          actionCategory: 'INFO_STOK',
+          menuName: menu.name,
+          detailAction: detailSisa,
+          timestamp: '23:59:59', // Dianggap akhir hari kemarin
+          dateString: getIndoDateString(tglKemarin)
+        });
+
+        // Reset Stok untuk hari ini
+        menu.stock = 0;
+        menu.stockPaha = 0;
+        menu.stockDada = 0;
+        menu.lastUpdatedDate = todayDate;
+        await menu.save();
+      }
+      updatedMenus.push(menu);
+    }
+
+    res.status(200).json(updatedMenus);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.put('/api/menu', async (req, res) => {
+  try {
+    const { sheet, menuId, name, price, stock, stockPaha, stockDada, oldData } = req.body;
+    const todayDate = new Date().toISOString().split('T')[0];
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const dateStr = getIndoDateString(now);
+
+    let menu = await MenuMaster.findOne({ sheet, menuId });
+    if (!menu) {
+      menu = new MenuMaster({ sheet, menuId, name, price, stock, stockPaha, stockDada, lastUpdatedDate: todayDate });
+    } else {
+      // CEK PERUBAHAN & BIKIN LAPORAN REALTIME
+      let logs = [];
+      
+      if (menu.name !== name) {
+        logs.push({ sheet, actionCategory: 'UBAH_NAMA', menuName: name, detailAction: `Mengubah NAMA dari [${menu.name}] menjadi [${name}]`, timestamp: timeStr, dateString: dateStr });
+        menu.name = name;
+      }
+      if (menu.price !== price) {
+        const rupiah = (num) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(num);
+        logs.push({ sheet, actionCategory: 'UBAH_HARGA', menuName: name, detailAction: `Mengubah HARGA dari ${rupiah(menu.price)} menjadi ${rupiah(price)}`, timestamp: timeStr, dateString: dateStr });
+        menu.price = price;
+      }
+      
+      // Cek Perubahan Stok
+      if (menuId.includes('ayam') && menu.stockPaha !== undefined) {
+         if (menu.stockPaha !== stockPaha || menu.stockDada !== stockDada) {
+             logs.push({ sheet, actionCategory: 'UBAH_STOK', menuName: name, detailAction: `Mengubah STOK manual. PAHA: [${menu.stockPaha} -> ${stockPaha}]. DADA: [${menu.stockDada} -> ${stockDada}]`, timestamp: timeStr, dateString: dateStr });
+             menu.stockPaha = stockPaha;
+             menu.stockDada = stockDada;
+         }
+      } else {
+         if (menu.stock !== stock) {
+             logs.push({ sheet, actionCategory: 'UBAH_STOK', menuName: name, detailAction: `Mengubah STOK manual dari [${menu.stock}] menjadi [${stock}]`, timestamp: timeStr, dateString: dateStr });
+             menu.stock = stock;
+         }
+      }
+      
+      menu.lastUpdatedDate = todayDate;
+      if (logs.length > 0) await ActivityLog.insertMany(logs);
+    }
+    await menu.save();
+    res.status(200).json(menu);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// API KURANGI STOK SAAT CHECKOUT (Panggil ini barengan saat simpan transaksi)
+app.post('/api/menu/deduct', async (req, res) => {
+    try {
+        const { sheet, cartItems } = req.body;
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = getIndoDateString(now);
+        
+        let logs = [];
+
+        for (let item of cartItems) {
+            // item format: { id: 'lele', name: 'Lele', qty: 2, variant: 'Paha' (opsional) }
+            let baseId = item.id.split('-')[0]; // kalo id nya 'ayam-paha', ambil 'ayam'
+            
+            let menu = await MenuMaster.findOne({ sheet, menuId: baseId });
+            if (!menu) continue;
+
+            if (item.variant === 'Paha') {
+                menu.stockPaha -= item.qty;
+                if (menu.stockPaha <= 0) {
+                    menu.stockPaha = 0;
+                    logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `STOK HABIS! Varian Paha habis terjual pada jam ${timeStr}`, timestamp: timeStr, dateString: dateStr });
+                }
+            } else if (item.variant === 'Dada') {
+                menu.stockDada -= item.qty;
+                if (menu.stockDada <= 0) {
+                    menu.stockDada = 0;
+                    logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `STOK HABIS! Varian Dada habis terjual pada jam ${timeStr}`, timestamp: timeStr, dateString: dateStr });
+                }
+            } else {
+                menu.stock -= item.qty;
+                if (menu.stock <= 0) {
+                    menu.stock = 0;
+                    logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `STOK HABIS! ${menu.name} habis terjual pada jam ${timeStr}`, timestamp: timeStr, dateString: dateStr });
+                }
+            }
+            await menu.save();
+        }
+
+        if (logs.length > 0) await ActivityLog.insertMany(logs);
+        
+        // Return trigger buat laporan penjualan kasir
+        const emptyStockLogs = logs.map(l => `[LAPORAN SISTEM] ${l.detailAction}`);
+        res.status(200).json({ status: 'success', systemMessages: emptyStockLogs });
+    } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 const PORT = process.env.PORT || 5000;
