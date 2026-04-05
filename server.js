@@ -403,6 +403,39 @@ app.post('/api/menu/deduct', async (req, res) => {
     } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// API KEMBALIKAN STOK SAAT PESANAN DIHAPUS/DIBATALKAN KASIR
+app.post('/api/menu/restore', async (req, res) => {
+    try {
+        const { sheet, cartItems } = req.body;
+        const now = new Date();
+        const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+        const dateStr = getIndoDateString(now);
+        
+        let logs = [];
+
+        for (let item of cartItems) {
+            // Cari menu pake regex nama karena ID gak kesimpen di string pesanan
+            let menu = await MenuMaster.findOne({ sheet, name: new RegExp(item.name, 'i') });
+            if (!menu) continue;
+
+            if (item.variant === 'Paha') {
+                menu.stockPaha += item.qty;
+                logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `RESTORE STOK: Varian Paha dikembalikan ${item.qty} (Batal Pesanan)`, timestamp: timeStr, dateString: dateStr });
+            } else if (item.variant === 'Dada') {
+                menu.stockDada += item.qty;
+                logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `RESTORE STOK: Varian Dada dikembalikan ${item.qty} (Batal Pesanan)`, timestamp: timeStr, dateString: dateStr });
+            } else {
+                menu.stock += item.qty;
+                logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `RESTORE STOK: ${menu.name} dikembalikan ${item.qty} (Batal Pesanan)`, timestamp: timeStr, dateString: dateStr });
+            }
+            await menu.save();
+        }
+
+        if (logs.length > 0) await ActivityLog.insertMany(logs);
+        res.status(200).json({ status: 'success' });
+    } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
 const PORT = process.env.PORT || 5000;
 if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => console.log(`🚀 Backend nyala di http://localhost:${PORT}`));
