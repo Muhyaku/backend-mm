@@ -151,23 +151,7 @@ app.post('/api/transactions', async (req, res) => {
   } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
 
-// SOFT DELETE
-app.delete('/api/transactions/:id', async (req, res) => {
-  try {
-    const updatedTx = await Transaction.findByIdAndUpdate(req.params.id, { isDeleted: true, deletedAt: new Date() }, { new: true });
-    res.status(200).json({ status: 'success', data: updatedTx });
-  } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
-});
-
-// HARD DELETE (PERMANENT)
-app.delete('/api/transactions/hard/:id', async (req, res) => {
-  try {
-    await Transaction.findByIdAndDelete(req.params.id);
-    res.status(200).json({ status: 'success', message: 'Data dihapus permanen!' });
-  } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
-});
-
-// MULTI-DELETE (HAPUS MASSAL) <-- TAMBAHIN INI
+// 1. MULTI-DELETE (HAPUS MASSAL) HARUS DI ATAS!
 app.delete('/api/transactions/bulk', async (req, res) => {
   try {
     const { ids, isHardDelete } = req.body;
@@ -179,6 +163,22 @@ app.delete('/api/transactions/bulk', async (req, res) => {
       await Transaction.updateMany({ _id: { $in: ids } }, { $set: { isDeleted: true, deletedAt: new Date() } });
     }
     res.status(200).json({ status: 'success', message: 'Data massal berhasil dihapus' });
+  } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
+});
+
+// 2. HARD DELETE (PERMANENT)
+app.delete('/api/transactions/hard/:id', async (req, res) => {
+  try {
+    await Transaction.findByIdAndDelete(req.params.id);
+    res.status(200).json({ status: 'success', message: 'Data dihapus permanen!' });
+  } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
+});
+
+// 3. SOFT DELETE (SATUAN) PALING BAWAH
+app.delete('/api/transactions/:id', async (req, res) => {
+  try {
+    const updatedTx = await Transaction.findByIdAndUpdate(req.params.id, { isDeleted: true, deletedAt: new Date() }, { new: true });
+    res.status(200).json({ status: 'success', data: updatedTx });
   } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
 
