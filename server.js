@@ -169,6 +169,21 @@ app.delete('/api/transactions/hard/:id', async (req, res) => {
   } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
 
+// MULTI-DELETE (HAPUS MASSAL) <-- TAMBAHIN INI
+app.delete('/api/transactions/bulk', async (req, res) => {
+  try {
+    const { ids, isHardDelete } = req.body;
+    if (!ids || ids.length === 0) return res.status(400).json({ status: 'error', message: 'Tidak ada data dipilih' });
+
+    if (isHardDelete) {
+      await Transaction.deleteMany({ _id: { $in: ids } });
+    } else {
+      await Transaction.updateMany({ _id: { $in: ids } }, { $set: { isDeleted: true, deletedAt: new Date() } });
+    }
+    res.status(200).json({ status: 'success', message: 'Data massal berhasil dihapus' });
+  } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
+});
+
 app.patch('/api/transactions/:id/print', async (req, res) => {
   try {
     const tx = await Transaction.findById(req.params.id);
