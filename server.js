@@ -283,11 +283,28 @@ app.put('/api/settings/:id', async (req, res) => {
 // API MENU MASTER & STOCK MANAGEMENT
 // ==========================================
 
-// Helper untuk format tanggal Indo
+// --- HELPER WAKTU ANTI-MELESET (FORCE WIB / ASIA/JAKARTA) ---
 const getIndoDateString = (dateObj) => {
-  const days = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-  const months = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'];
-  return `${days[dateObj.getDay()]}, ${String(dateObj.getDate()).padStart(2, '0')} ${months[dateObj.getMonth()]} ${dateObj.getFullYear()}`;
+    return new Intl.DateTimeFormat('id-ID', {
+        timeZone: 'Asia/Jakarta',
+        weekday: 'long', 
+        day: '2-digit', 
+        month: 'long', 
+        year: 'numeric'
+    }).format(dateObj);
+};
+
+const getIndoTimeString = (dateObj, withSeconds = false) => {
+    const opts = { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false };
+    if (withSeconds) opts.second = '2-digit';
+    return new Intl.DateTimeFormat('id-ID', opts).format(dateObj).replace(/\./g, ':');
+};
+
+const getWibTodayDate = () => {
+    // Menghasilkan format YYYY-MM-DD mutlak di zona waktu WIB
+    return new Intl.DateTimeFormat('en-CA', { 
+        timeZone: 'Asia/Jakarta', year: 'numeric', month: '2-digit', day: '2-digit' 
+    }).format(new Date());
 };
 
 app.get('/api/menu', async (req, res) => {
@@ -295,7 +312,7 @@ app.get('/api/menu', async (req, res) => {
     const { sheet } = req.query;
     if (!sheet) return res.status(400).json({ error: 'Sheet diperlukan' });
 
-    const todayDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+    const todayDate = getWibTodayDate(); // Pakai helper WIB
     const menus = await MenuMaster.find({ sheet });
 
     let updatedMenus = [];
@@ -304,17 +321,16 @@ app.get('/api/menu', async (req, res) => {
     for (let menu of menus) {
       if (menu.lastUpdatedDate !== todayDate) {
         // TANGGAL BERBEDA! Berarti ganti hari. Catat sisa stok kemarin ke laporan!
-        const tglKemarin = new Date(menu.lastUpdatedDate);
         let detailSisa = `SISA STOK KEMARIN: Tersisa ${menu.stock} porsi`;
 
-        // Bikin Laporan Sisa Stok
+        // Bikin Laporan Sisa Stok pakai tanggal dari database kemarin biar akurat
         await ActivityLog.create({
           sheet: menu.sheet,
           actionCategory: 'INFO_STOK',
           menuName: menu.name,
           detailAction: detailSisa,
           timestamp: '23:59:59', // Dianggap akhir hari kemarin
-          dateString: getIndoDateString(tglKemarin)
+          dateString: `Rekap Stok Otomatis` 
         });
 
         // Reset Stok untuk hari ini (GLOBAL STOK)
@@ -332,10 +348,10 @@ app.get('/api/menu', async (req, res) => {
 app.put('/api/menu', async (req, res) => {
   try {
     const { sheet, menuId, name, price, stock } = req.body;
-    const todayDate = new Date().toISOString().split('T')[0];
+    const todayDate = getWibTodayDate();
     const now = new Date();
-    const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const dateStr = getIndoDateString(now);
+    const timeStr = getIndoTimeString(now, true); // Pakai helper WIB + Detik
+    const dateStr = getIndoDateString(now); // Pakai helper WIB
 
     let menu = await MenuMaster.findOne({ sheet, menuId });
     if (!menu) {
@@ -373,8 +389,8 @@ app.post('/api/menu/deduct', async (req, res) => {
     try {
         const { sheet, cartItems } = req.body;
         const now = new Date();
-        const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-        const dateStr = getIndoDateString(now);
+        const timeStr = getIndoTimeString(now); // Pakai helper WIB
+        const dateStr = getIndoDateString(now); // Pakai helper WIB
         
         // PROSES PARALEL PAKAI PROMISE.ALL
         const stockUpdates = cartItems.map(async (item) => {
@@ -407,8 +423,8 @@ app.post('/api/menu/restore', async (req, res) => {
     try {
         const { sheet, cartItems } = req.body;
         const now = new Date();
-        const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-        const dateStr = getIndoDateString(now);
+        const timeStr = getIndoTimeString(now); // Pakai helper WIB
+        const dateStr = getIndoDateString(now); // Pakai helper WIB
         
         // PROSES PARALEL PAKAI PROMISE.ALL
         const restoreUpdates = cartItems.map(async (item) => {
