@@ -412,8 +412,11 @@ app.post('/api/menu/restore', async (req, res) => {
         
         // PROSES PARALEL PAKAI PROMISE.ALL
         const restoreUpdates = cartItems.map(async (item) => {
-            // Hindari RegExp sebisa mungkin karena bikin database berat nyarinya
-            let menu = await MenuMaster.findOne({ sheet, name: item.name.trim() });
+            // Escape special character (kayak "+" di "Nasi Rames +") biar aman di Regex
+            const safeName = item.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            
+            // Pencarian kebal huruf besar/kecil (Regex 'i')
+            let menu = await MenuMaster.findOne({ sheet, name: new RegExp(`^${safeName}$`, 'i') });
             if (!menu) return null;
 
             menu.stock += item.qty;
