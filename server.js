@@ -128,13 +128,21 @@ app.delete('/api/activities/hard/:id', async (req, res) => {
 });
 
 // ==========================================
-// API TRANSAKSI
+// API TRANSAKSI 
 // ==========================================
 app.get('/api/transactions', async (req, res) => {
   try {
-    const { sheet } = req.query;
-    const filter = sheet ? { sheet: sheet } : {};
-    const data = await Transaction.find(filter).sort({ createdAt: 1 });
+    const { sheet, tanggal } = req.query; // <-- Tangkap query tanggal
+    
+    let filter = {};
+    if (sheet) filter.sheet = sheet;
+    if (tanggal) filter.tanggal = tanggal; // <-- Filter berdasarkan tanggal HARI INI saja
+
+    // Kalau ada tanggal (kasir), limit data biar HP ga meledak.
+    const query = Transaction.find(filter).sort({ createdAt: 1 });
+    if (tanggal) query.limit(500); 
+
+    const data = await query.exec();
     res.status(200).json(data);
   } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
@@ -368,21 +376,24 @@ app.post('/api/menu/deduct', async (req, res) => {
         const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
         const dateStr = getIndoDateString(now);
         
-        let logs = [];
-
-        for (let item of cartItems) {
-            let baseId = item.id.split('-')[0]; // kalo id nya 'ayam-paha', ambil 'ayam'
+        // PROSES PARALEL PAKAI PROMISE.ALL
+        const stockUpdates = cartItems.map(async (item) => {
+            let baseId = item.id.split('-')[0]; 
             let menu = await MenuMaster.findOne({ sheet, menuId: baseId });
-            if (!menu) continue;
+            if (!menu) return null;
 
-            // Potong langsung ke stok global
             menu.stock -= item.qty;
+            let logEntry = null;
             if (menu.stock <= 0) {
                 menu.stock = 0;
-                logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `STOK HABIS! ${menu.name} habis terjual pada jam ${timeStr}`, timestamp: timeStr, dateString: dateStr });
+                logEntry = { sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `STOK HABIS! ${menu.name} habis terjual pada jam ${timeStr}`, timestamp: timeStr, dateString: dateStr };
             }
             await menu.save();
-        }
+            return logEntry;
+        });
+
+        const results = await Promise.all(stockUpdates);
+        const logs = results.filter(log => log !== null);
 
         if (logs.length > 0) await ActivityLog.insertMany(logs);
         
@@ -399,18 +410,18 @@ app.post('/api/menu/restore', async (req, res) => {
         const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
         const dateStr = getIndoDateString(now);
         
-        let logs = [];
+        // PROSES PARALEL PAKAI PROMISE.ALL
+        const restoreUpdates = cartItems.map(async (item) => {
+            // Hindari RegExp sebisa mungkin karena bikin database berat nyarinya
+            let menu = await MenuMaster.findOne({ sheet, name: item.name.trim() });
+            if (!menu) return null;
 
-        for (let item of cartItems) {
-            let menu = await MenuMaster.findOne({ sheet, name: new RegExp(item.name, 'i') });
-            if (!menu) continue;
-
-            // Kembalikan langsung ke stok global
             menu.stock += item.qty;
-            logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `RESTORE STOK: ${menu.name} dikembalikan ${item.qty} porsi (Batal Pesanan)`, timestamp: timeStr, dateString: dateStr });
-            
             await menu.save();
-        }
+            return { sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `RESTORE STOK: ${menu.name} dikembalikan ${item.qty} porsi (Batal Pesanan)`, timestamp: timeStr, dateString: dateStr };
+        });
+
+        const logs = (await Promise.all(restoreUpdates)).filter(log => log !== null);
 
         if (logs.length > 0) await ActivityLog.insertMany(logs);
         res.status(200).json({ status: 'success' });
