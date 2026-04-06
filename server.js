@@ -79,8 +79,6 @@ const menuMasterSchema = new mongoose.Schema({
   name: { type: String, required: true },
   price: { type: Number, required: true },
   stock: { type: Number, default: 0 },
-  stockPaha: { type: Number, default: 0 }, // Khusus ayam
-  stockDada: { type: Number, default: 0 }, // Khusus ayam
   lastUpdatedDate: { type: String, required: true } // Format: YYYY-MM-DD
 }, { timestamps: true });
 const MenuMaster = mongoose.model('MenuMaster', menuMasterSchema);
@@ -299,13 +297,7 @@ app.get('/api/menu', async (req, res) => {
       if (menu.lastUpdatedDate !== todayDate) {
         // TANGGAL BERBEDA! Berarti ganti hari. Catat sisa stok kemarin ke laporan!
         const tglKemarin = new Date(menu.lastUpdatedDate);
-        
-        let detailSisa = "";
-        if (menu.menuId.includes('ayam') && menu.stockPaha !== undefined) {
-             detailSisa = `SISA STOK KEMARIN: Paha (${menu.stockPaha}), Dada (${menu.stockDada})`;
-        } else {
-             detailSisa = `SISA STOK KEMARIN: Tersisa ${menu.stock} porsi`;
-        }
+        let detailSisa = `SISA STOK KEMARIN: Tersisa ${menu.stock} porsi`;
 
         // Bikin Laporan Sisa Stok
         await ActivityLog.create({
@@ -317,10 +309,8 @@ app.get('/api/menu', async (req, res) => {
           dateString: getIndoDateString(tglKemarin)
         });
 
-        // Reset Stok untuk hari ini
+        // Reset Stok untuk hari ini (GLOBAL STOK)
         menu.stock = 0;
-        menu.stockPaha = 0;
-        menu.stockDada = 0;
         menu.lastUpdatedDate = todayDate;
         await menu.save();
       }
@@ -333,7 +323,7 @@ app.get('/api/menu', async (req, res) => {
 
 app.put('/api/menu', async (req, res) => {
   try {
-    const { sheet, menuId, name, price, stock, stockPaha, stockDada, oldData } = req.body;
+    const { sheet, menuId, name, price, stock } = req.body;
     const todayDate = new Date().toISOString().split('T')[0];
     const now = new Date();
     const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -341,7 +331,7 @@ app.put('/api/menu', async (req, res) => {
 
     let menu = await MenuMaster.findOne({ sheet, menuId });
     if (!menu) {
-      menu = new MenuMaster({ sheet, menuId, name, price, stock, stockPaha, stockDada, lastUpdatedDate: todayDate });
+      menu = new MenuMaster({ sheet, menuId, name, price, stock, lastUpdatedDate: todayDate });
     } else {
       // CEK PERUBAHAN & BIKIN LAPORAN REALTIME
       let logs = [];
@@ -356,18 +346,10 @@ app.put('/api/menu', async (req, res) => {
         menu.price = price;
       }
       
-      // Cek Perubahan Stok
-      if (menuId.includes('ayam') && menu.stockPaha !== undefined) {
-         if (menu.stockPaha !== stockPaha || menu.stockDada !== stockDada) {
-             logs.push({ sheet, actionCategory: 'UBAH_STOK', menuName: name, detailAction: `Mengubah STOK manual. PAHA: [${menu.stockPaha} -> ${stockPaha}]. DADA: [${menu.stockDada} -> ${stockDada}]`, timestamp: timeStr, dateString: dateStr });
-             menu.stockPaha = stockPaha;
-             menu.stockDada = stockDada;
-         }
-      } else {
-         if (menu.stock !== stock) {
-             logs.push({ sheet, actionCategory: 'UBAH_STOK', menuName: name, detailAction: `Mengubah STOK manual dari [${menu.stock}] menjadi [${stock}]`, timestamp: timeStr, dateString: dateStr });
-             menu.stock = stock;
-         }
+      // Cek Perubahan Stok Global (Sudah disatukan)
+      if (menu.stock !== stock) {
+          logs.push({ sheet, actionCategory: 'UBAH_STOK', menuName: name, detailAction: `Mengubah STOK manual dari [${menu.stock}] menjadi [${stock}]`, timestamp: timeStr, dateString: dateStr });
+          menu.stock = stock;
       }
       
       menu.lastUpdatedDate = todayDate;
@@ -378,7 +360,7 @@ app.put('/api/menu', async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
-// API KURANGI STOK SAAT CHECKOUT (Panggil ini barengan saat simpan transaksi)
+// API KURANGI STOK SAAT CHECKOUT
 app.post('/api/menu/deduct', async (req, res) => {
     try {
         const { sheet, cartItems } = req.body;
@@ -389,37 +371,21 @@ app.post('/api/menu/deduct', async (req, res) => {
         let logs = [];
 
         for (let item of cartItems) {
-            // item format: { id: 'lele', name: 'Lele', qty: 2, variant: 'Paha' (opsional) }
             let baseId = item.id.split('-')[0]; // kalo id nya 'ayam-paha', ambil 'ayam'
-            
             let menu = await MenuMaster.findOne({ sheet, menuId: baseId });
             if (!menu) continue;
 
-            if (item.variant === 'Paha') {
-                menu.stockPaha -= item.qty;
-                if (menu.stockPaha <= 0) {
-                    menu.stockPaha = 0;
-                    logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `STOK HABIS! Varian Paha habis terjual pada jam ${timeStr}`, timestamp: timeStr, dateString: dateStr });
-                }
-            } else if (item.variant === 'Dada') {
-                menu.stockDada -= item.qty;
-                if (menu.stockDada <= 0) {
-                    menu.stockDada = 0;
-                    logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `STOK HABIS! Varian Dada habis terjual pada jam ${timeStr}`, timestamp: timeStr, dateString: dateStr });
-                }
-            } else {
-                menu.stock -= item.qty;
-                if (menu.stock <= 0) {
-                    menu.stock = 0;
-                    logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `STOK HABIS! ${menu.name} habis terjual pada jam ${timeStr}`, timestamp: timeStr, dateString: dateStr });
-                }
+            // Potong langsung ke stok global
+            menu.stock -= item.qty;
+            if (menu.stock <= 0) {
+                menu.stock = 0;
+                logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `STOK HABIS! ${menu.name} habis terjual pada jam ${timeStr}`, timestamp: timeStr, dateString: dateStr });
             }
             await menu.save();
         }
 
         if (logs.length > 0) await ActivityLog.insertMany(logs);
         
-        // Return trigger buat laporan penjualan kasir
         const emptyStockLogs = logs.map(l => `[LAPORAN SISTEM] ${l.detailAction}`);
         res.status(200).json({ status: 'success', systemMessages: emptyStockLogs });
     } catch (error) { res.status(500).json({ error: error.message }); }
@@ -436,20 +402,13 @@ app.post('/api/menu/restore', async (req, res) => {
         let logs = [];
 
         for (let item of cartItems) {
-            // Cari menu pake regex nama karena ID gak kesimpen di string pesanan
             let menu = await MenuMaster.findOne({ sheet, name: new RegExp(item.name, 'i') });
             if (!menu) continue;
 
-            if (item.variant === 'Paha') {
-                menu.stockPaha += item.qty;
-                logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `RESTORE STOK: Varian Paha dikembalikan ${item.qty} (Batal Pesanan)`, timestamp: timeStr, dateString: dateStr });
-            } else if (item.variant === 'Dada') {
-                menu.stockDada += item.qty;
-                logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `RESTORE STOK: Varian Dada dikembalikan ${item.qty} (Batal Pesanan)`, timestamp: timeStr, dateString: dateStr });
-            } else {
-                menu.stock += item.qty;
-                logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `RESTORE STOK: ${menu.name} dikembalikan ${item.qty} (Batal Pesanan)`, timestamp: timeStr, dateString: dateStr });
-            }
+            // Kembalikan langsung ke stok global
+            menu.stock += item.qty;
+            logs.push({ sheet, actionCategory: 'INFO_STOK', menuName: menu.name, detailAction: `RESTORE STOK: ${menu.name} dikembalikan ${item.qty} porsi (Batal Pesanan)`, timestamp: timeStr, dateString: dateStr });
+            
             await menu.save();
         }
 
