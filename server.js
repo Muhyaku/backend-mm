@@ -57,8 +57,15 @@ const initSettings = async () => {
   if (count === 0) {
     await Setting.insertMany([
       { settingKey: 'scramble_keypad', name: 'Acak Tombol PIN Kasir', description: 'Mengacak posisi angka di layar login untuk mencegah orang menghapal gerakan jari kasir (Anti-Ngintip).', isActive: false, branches: [] },
-      { settingKey: 'pin_table_column', name: 'Bekukan Kolom Tabel (Pin Header)', description: 'Membekukan kolom Aksi dan Total di laporan agar tidak ikut tergeser saat di-scroll menyamping (Cocok untuk Layar Tablet).', isActive: true, branches: [] }
+      { settingKey: 'pin_table_column', name: 'Bekukan Kolom Tabel (Pin Header)', description: 'Membekukan kolom Aksi dan Total di laporan agar tidak ikut tergeser saat di-scroll menyamping (Cocok untuk Layar Tablet).', isActive: true, branches: [] },
+      { settingKey: 'multi_delete', name: 'Fitur Hapus Masal (Multi-Delete)', description: 'Mengaktifkan kotak centang (checkbox) pada tabel laporan admin untuk menghapus banyak data sekaligus (Sementara / Permanen).', isActive: false, branches: [] }
     ]);
+  } else {
+    // Fallback otomatis buat nambahin fitur delete masal di DB yang udah jalan
+    const hasMultiDelete = await Setting.findOne({ settingKey: 'multi_delete' });
+    if (!hasMultiDelete) {
+        await Setting.create({ settingKey: 'multi_delete', name: 'Fitur Hapus Masal (Multi-Delete)', description: 'Mengaktifkan kotak centang (checkbox) pada tabel laporan admin untuk menghapus banyak data sekaligus (Sementara / Permanen).', isActive: false, branches: [] });
+    }
   }
 };
 initSettings();
