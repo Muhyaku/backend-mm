@@ -127,6 +127,21 @@ app.delete('/api/activities/hard/:id', async (req, res) => {
   } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
 
+// --- API HAPUS MASSAL LOG AKTIVITAS ---
+app.delete('/api/activities/bulk', async (req, res) => {
+  try {
+    const { ids, isHardDelete } = req.body;
+    if (!ids || ids.length === 0) return res.status(400).json({ status: 'error', message: 'Tidak ada data log dipilih' });
+
+    if (isHardDelete) {
+      await ActivityLog.deleteMany({ _id: { $in: ids } });
+    } else {
+      await ActivityLog.updateMany({ _id: { $in: ids } }, { $set: { isDeleted: true } });
+    }
+    res.status(200).json({ status: 'success', message: 'Log massal berhasil dihapus' });
+  } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
+});
+
 // ==========================================
 // API TRANSAKSI 
 // ==========================================
