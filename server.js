@@ -12,6 +12,15 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('✅ BOOM! Berhasil terhubung ke MongoDB!'))
   .catch((err) => console.error('❌ Gagal connect ke MongoDB:', err));
 
+// SCHEMA LAPORAN DARURAT
+const emergencySchema = new mongoose.Schema({
+  sheet: { type: String, required: true },
+  message: { type: String, default: "Sistem Error / Butuh Bantuan" },
+  status: { type: String, enum: ['ACTIVE', 'SOLVED'], default: 'ACTIVE' }, // ACTIVE = Muncul terus
+  timestamp: { type: String, required: true }
+}, { timestamps: true });
+const Emergency = mongoose.model('Emergency', emergencySchema);
+
 // 2. SCHEMA TRANSAKSI
 const transactionSchema = new mongoose.Schema({
   sheet: { type: String, required: true, index: true },
@@ -143,6 +152,30 @@ app.delete('/api/activities/:id', async (req, res) => {
     res.status(200).json({ status: 'success', data: updated });
   } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
+
+// API EMERGENCY SYSTEM
+app.get('/api/emergency/active', async (req, res) => {
+  try {
+    const data = await Emergency.find({ status: 'ACTIVE' }).sort({ createdAt: -1 });
+    res.status(200).json(data);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/emergency', async (req, res) => {
+  try {
+    const newEmergency = new Emergency(req.body);
+    await newEmergency.save();
+    res.status(201).json({ status: 'success', data: newEmergency });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.put('/api/emergency/solve/:id', async (req, res) => {
+  try {
+    await Emergency.findByIdAndUpdate(req.params.id, { status: 'SOLVED' });
+    res.status(200).json({ status: 'success', message: 'Masalah Selesai' });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
 // ==========================================
 // API TRANSAKSI 
 // ==========================================
