@@ -113,21 +113,7 @@ app.post('/api/activities', async (req, res) => {
   } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
 
-app.delete('/api/activities/:id', async (req, res) => {
-  try {
-    const updated = await ActivityLog.findByIdAndUpdate(req.params.id, { isDeleted: true, deletedAt: new Date() }, { new: true });
-    res.status(200).json({ status: 'success', data: updated });
-  } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
-});
-
-app.delete('/api/activities/hard/:id', async (req, res) => {
-  try {
-    await ActivityLog.findByIdAndDelete(req.params.id);
-    res.status(200).json({ status: 'success', message: 'Log dihapus permanen' });
-  } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
-});
-
-// --- API HAPUS MASSAL LOG AKTIVITAS ---
+// --- 1. API HAPUS MASSAL (BULK) HARUS PALING ATAS! ---
 app.delete('/api/activities/bulk', async (req, res) => {
   try {
     const { ids, isHardDelete } = req.body;
@@ -142,6 +128,21 @@ app.delete('/api/activities/bulk', async (req, res) => {
   } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
 });
 
+// --- 2. HARD DELETE (PERMANENT) SATUAN ---
+app.delete('/api/activities/hard/:id', async (req, res) => {
+  try {
+    await ActivityLog.findByIdAndDelete(req.params.id);
+    res.status(200).json({ status: 'success', message: 'Log dihapus permanen' });
+  } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
+});
+
+// --- 3. SOFT DELETE (SATUAN) TARUH PALING BAWAH! ---
+app.delete('/api/activities/:id', async (req, res) => {
+  try {
+    const updated = await ActivityLog.findByIdAndUpdate(req.params.id, { isDeleted: true, deletedAt: new Date() }, { new: true });
+    res.status(200).json({ status: 'success', data: updated });
+  } catch (error) { res.status(500).json({ status: 'error', message: error.message }); }
+});
 // ==========================================
 // API TRANSAKSI 
 // ==========================================
