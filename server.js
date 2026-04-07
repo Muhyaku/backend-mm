@@ -173,26 +173,30 @@ app.post('/api/emergency', async (req, res) => {
     const newEmergency = new Emergency(req.body);
     await newEmergency.save();
 
-    // --- FITUR BARU: TEMBAK NOTIFIKASI KE TELEGRAM DEDE ---
-    // Jalan di background server, jadi 100% aman dan pasti masuk ke HP
+// --- FITUR BARU: TEMBAK NOTIFIKASI KE TELEGRAM DEDE ---
     if (TELEGRAM_BOT_TOKEN !== '8794940131:AAFLrlwwxwuTi6u8mU-oVQ27oINhn8L3xAc') {
       const pesanTelegram = `🚨 *PANGGILAN DARURAT KASIR!* 🚨\n\n📍 *Cabang:* ${req.body.sheet}\n⏰ *Waktu:* ${req.body.timestamp}\n💬 *Pesan:* ${req.body.message || 'Sistem Error / Butuh Bantuan'}\n\nSegera cek Dashboard Admin lu bos!`;
       
       const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
       
-      // Tembak API Telegram pakai fetch bawaan Node.js (v18+)
-      fetch(telegramUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          chat_id: TELEGRAM_CHAT_ID,
-          text: pesanTelegram,
-          parse_mode: 'Markdown'
-        })
-      }).catch(err => console.error('Gagal kirim Telegram:', err)); // Cuekin error biar ga bikin server mati
+      try {
+        // TAMBAHIN AWAIT DI SINI BOS! Biar Vercel nungguin sampai sukses terkirim.
+        await fetch(telegramUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: TELEGRAM_CHAT_ID,
+            text: pesanTelegram,
+            parse_mode: 'Markdown'
+          })
+        });
+      } catch (err) {
+        console.error('Gagal kirim Telegram:', err);
+      }
     }
     // --------------------------------------------------------
 
+    // Pastikan res.status ini ada DI BAWAH blok Telegram di atas
     res.status(201).json({ status: 'success', data: newEmergency });
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
