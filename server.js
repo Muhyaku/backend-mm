@@ -345,43 +345,70 @@ app.get('/api/menu', async (req, res) => {
   } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
+// API UPDATE MENU & STOK (VERSI OPTIMASI SUPER CEPAT)
 app.put('/api/menu', async (req, res) => {
   try {
     const { sheet, menuId, name, price, stock } = req.body;
     const todayDate = getWibTodayDate();
     const now = new Date();
-    const timeStr = getIndoTimeString(now, true); // Pakai helper WIB + Detik
-    const dateStr = getIndoDateString(now); // Pakai helper WIB
+    const timeStr = getIndoTimeString(now, true); // Jam:Menit:Detik WIB
+    const dateStr = getIndoDateString(now); // Hari, Tanggal WIB
 
     let menu = await MenuMaster.findOne({ sheet, menuId });
+    
     if (!menu) {
+      // Jika menu baru, langsung buat
       menu = new MenuMaster({ sheet, menuId, name, price, stock, lastUpdatedDate: todayDate });
+      await menu.save();
     } else {
-      // CEK PERUBAHAN & BIKIN LAPORAN REALTIME
       let logs = [];
-      
-      if (menu.name !== name) {
-        logs.push({ sheet, actionCategory: 'UBAH_NAMA', menuName: name, detailAction: `Mengubah NAMA dari [${menu.name}] menjadi [${name}]`, timestamp: timeStr, dateString: dateStr });
-        menu.name = name;
+      const newStockNum = parseInt(stock) || 0;
+      const oldStockNum = menu.stock || 0;
+
+      // 1. DETEKSI PERUBAHAN STOK (FOKUS UTAMA)
+      if (oldStockNum !== newStockNum) {
+          const statusLama = oldStockNum === 0 ? "HABIS (0)" : oldStockNum;
+          logs.push({
+              sheet,
+              actionCategory: 'UBAH_STOK',
+              menuName: name,
+              detailAction: `MANUAL UPDATE: Mengubah Stok dari [${statusLama}] menjadi [${newStockNum}] porsi.`,
+              timestamp: timeStr,
+              dateString: dateStr
+          });
+          menu.stock = newStockNum;
       }
+
+      // 2. DETEKSI PERUBAHAN HARGA
       if (menu.price !== price) {
-        const rupiah = (num) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(num);
-        logs.push({ sheet, actionCategory: 'UBAH_HARGA', menuName: name, detailAction: `Mengubah HARGA dari ${rupiah(menu.price)} menjadi ${rupiah(price)}`, timestamp: timeStr, dateString: dateStr });
-        menu.price = price;
+          const rupiah = (num) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(num);
+          logs.push({ sheet, actionCategory: 'UBAH_HARGA', menuName: name, detailAction: `Ubah Harga: ${rupiah(menu.price)} -> ${rupiah(price)}`, timestamp: timeStr, dateString: dateStr });
+          menu.price = price;
       }
-      
-      // Cek Perubahan Stok Global (Sudah disatukan)
-      if (menu.stock !== stock) {
-          logs.push({ sheet, actionCategory: 'UBAH_STOK', menuName: name, detailAction: `Mengubah STOK manual dari [${menu.stock}] menjadi [${stock}]`, timestamp: timeStr, dateString: dateStr });
-          menu.stock = stock;
+
+      // 3. DETEKSI PERUBAHAN NAMA
+      if (menu.name !== name) {
+          logs.push({ sheet, actionCategory: 'UBAH_NAMA', menuName: name, detailAction: `Ubah Nama: [${menu.name}] -> [${name}]`, timestamp: timeStr, dateString: dateStr });
+          menu.name = name;
       }
       
       menu.lastUpdatedDate = todayDate;
-      if (logs.length > 0) await ActivityLog.insertMany(logs);
+
+      // Simpan Menu & Log secara paralel agar super cepat
+      if (logs.length > 0) {
+          await Promise.all([
+              menu.save(),
+              ActivityLog.insertMany(logs)
+          ]);
+      } else {
+          await menu.save();
+      }
     }
-    await menu.save();
-    res.status(200).json(menu);
-  } catch (error) { res.status(500).json({ error: error.message }); }
+    
+    res.status(200).json({ status: 'success', data: menu });
+  } catch (error) { 
+    res.status(500).json({ status: 'error', message: error.message }); 
+  }
 });
 
 // API KURANGI STOK SAAT CHECKOUT
