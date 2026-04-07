@@ -175,7 +175,7 @@ app.post('/api/emergency', async (req, res) => {
 
     // --- FITUR BARU: TEMBAK NOTIFIKASI KE TELEGRAM DEDE ---
     // Jalan di background server, jadi 100% aman dan pasti masuk ke HP
-    if (TELEGRAM_BOT_TOKEN !== 'TARUH_TOKEN_DARI_BOTFATHER_DI_SINI') {
+    if (TELEGRAM_BOT_TOKEN !== '8794940131:AAFLrlwwxwuTi6u8mU-oVQ27oINhn8L3xAc') {
       const pesanTelegram = `🚨 *PANGGILAN DARURAT KASIR!* 🚨\n\n📍 *Cabang:* ${req.body.sheet}\n⏰ *Waktu:* ${req.body.timestamp}\n💬 *Pesan:* ${req.body.message || 'Sistem Error / Butuh Bantuan'}\n\nSegera cek Dashboard Admin lu bos!`;
       
       const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
