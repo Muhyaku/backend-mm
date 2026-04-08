@@ -83,15 +83,25 @@ initSettings();
 
 // 4. SCHEMA MENU MASTER (UNTUK NAMA, HARGA, STOK)
 const menuMasterSchema = new mongoose.Schema({
-  sheet: { type: String, required: true, index: true },
-  menuId: { type: String, required: true },
-  name: { type: String, required: true },
-  price: { type: Number, required: true },
-  stock: { type: Number, default: 0 },
-  lastUpdatedDate: { type: String, required: true } // Format: YYYY-MM-DD
+  sheet: { type: String, required: true, index: true },
+  menuId: { type: String, required: true },
+  name: { type: String, required: true },
+  price: { type: Number, required: true },
+  stock: { type: Number, default: 0 },
+  lastUpdatedDate: { type: String, required: true }, // Format: YYYY-MM-DD
+  lastRestockTime: { type: String, default: "" } // <-- FITUR BARU: JAM RESTOK
 }, { timestamps: true });
 const MenuMaster = mongoose.model('MenuMaster', menuMasterSchema);
 
+// 6. SCHEMA PROGRESS ITEM (AUTO-BACKUP HARIAN)
+const progressItemSchema = new mongoose.Schema({
+  sheet: { type: String, required: true, index: true },
+  tanggal: { type: String, required: true, index: true },
+  dataGroups: { type: Array, default: [] },
+  grandTotals: { type: Object, default: {} },
+  lastSync: { type: String, default: "" }
+}, { timestamps: true });
+const ProgressItem = mongoose.model('ProgressItem', progressItemSchema);
 // 5. SCHEMA ACTIVITY LOG (SUPER DETAIL)
 const activityLogSchema = new mongoose.Schema({
   sheet: { type: String, required: true, index: true },
@@ -446,20 +456,21 @@ app.put('/api/menu', async (req, res) => {
       const newStockNum = parseInt(stock) || 0;
       const oldStockNum = menu.stock || 0;
 
-      // 1. DETEKSI PERUBAHAN STOK (FOKUS UTAMA)
-      if (oldStockNum !== newStockNum) {
-          const statusLama = oldStockNum === 0 ? "HABIS (0)" : oldStockNum;
-          logs.push({
-              sheet,
-              actionCategory: 'UBAH_STOK',
-              menuName: name,
-              detailAction: `MANUAL UPDATE: Mengubah Stok dari [${statusLama}] menjadi [${newStockNum}] porsi.`,
-              timestamp: timeStr,
-              dateString: dateStr
-          });
-          menu.stock = newStockNum;
-      }
-
+// 1. DETEKSI PERUBAHAN STOK (FOKUS UTAMA)
+      if (oldStockNum !== newStockNum) {
+          const statusLama = oldStockNum === 0 ? "HABIS (0)" : oldStockNum;
+          logs.push({
+              sheet,
+              actionCategory: 'UBAH_STOK',
+              menuName: name,
+              detailAction: `MANUAL UPDATE: Mengubah Stok dari [${statusLama}] menjadi [${newStockNum}] porsi.`,
+              timestamp: timeStr,
+              dateString: dateStr
+          });
+          menu.stock = newStockNum;
+          menu.lastRestockTime = timeStr; // <-- SAVE JAM RESTOK
+      }
+      
       // 2. DETEKSI PERUBAHAN HARGA
       if (menu.price !== price) {
           const rupiah = (num) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(num);
@@ -553,6 +564,29 @@ app.post('/api/menu/restore', async (req, res) => {
         if (logs.length > 0) await ActivityLog.insertMany(logs);
         res.status(200).json({ status: 'success' });
     } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+// ==========================================
+// API PROGRESS ITEM (AUTO SAVE BACKUP)
+// ==========================================
+app.get('/api/progress', async (req, res) => {
+  try {
+    const { sheet, tanggal } = req.query;
+    const data = await ProgressItem.findOne({ sheet, tanggal });
+    res.status(200).json(data);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/progress', async (req, res) => {
+  try {
+    const { sheet, tanggal, dataGroups, grandTotals, lastSync } = req.body;
+    const updated = await ProgressItem.findOneAndUpdate(
+      { sheet, tanggal },
+      { dataGroups, grandTotals, lastSync },
+      { upsert: true, new: true }
+    );
+    res.status(200).json({ status: 'success', data: updated });
+  } catch (error) { res.status(500).json({ error: error.message }); }
 });
 
 const PORT = process.env.PORT || 5000;
