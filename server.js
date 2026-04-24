@@ -79,6 +79,38 @@ const initSettings = async () => {
 };
 initSettings();
 
+// SCHEMA HARGA MODAL KHUSUS PASAR SENEN
+const modalSenenSchema = new mongoose.Schema({
+  itemId: { type: String, required: true, unique: true },
+  name: { type: String, required: true },
+  hargaModal: { type: Number, default: 0 }
+}, { timestamps: true });
+const ModalSenen = mongoose.model('ModalSenen', modalSenenSchema);
+
+// API HARGA MODAL PASAR SENEN
+app.get('/api/modal-senen', async (req, res) => {
+  try {
+    const data = await ModalSenen.find();
+    res.status(200).json(data);
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
+app.post('/api/modal-senen', async (req, res) => {
+  try {
+    const { items } = req.body;
+    // Update massal harga modal (Upsert: kalau gak ada dibikin, kalau ada diupdate)
+    const bulkOps = items.map(item => ({
+      updateOne: {
+        filter: { itemId: item.id },
+        update: { itemId: item.id, name: item.name, hargaModal: item.hargaModal },
+        upsert: true
+      }
+    }));
+    await ModalSenen.bulkWrite(bulkOps);
+    res.status(200).json({ status: 'success' });
+  } catch (error) { res.status(500).json({ error: error.message }); }
+});
+
 // ... (Di bawah schema Transaction & Recurring)
 
 // 4. SCHEMA MENU MASTER (UNTUK NAMA, HARGA, STOK)
